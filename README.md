@@ -9,9 +9,14 @@ https://daehwankimlab.github.io/hisat-genotype/
 https://daehwankimlab.github.io/hisat2/
 
 ## Current Release Version
-v1.3.2 - Update to patch critical extract reads error
+v1.3.4 - Support for the new IPD-IMGT/HLA database releases (3.65.0 and later),
+          robust database builds, and general stability fixes
 
 ## Previous Releases
+v1.3.3 - Added option to output all allele counts
+
+v1.3.2 - Update to patch critical extract reads error
+
 v1.3.1 - Update database locations and handling, and general stability fixes - BROKEN
 
 v1.3.0 - Python 3 version

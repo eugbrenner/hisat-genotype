@@ -406,7 +406,7 @@ def extract_msa(base_dname,
                 min_freq,
                 verbose):    
     # Download human genome and HISAT2 index
-    typing_common.download_genome_and_index()
+    typing_common.download_genome_and_index(".")
 
     # Load allele frequency information
     allele_freq = {}

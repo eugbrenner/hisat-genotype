@@ -74,11 +74,23 @@ def string_slice(string, pos):
     assert len(string) == 1+len(new_string)
     return new_string
 
-""" Simple check for exsistance of file """
-def check_files(fnames):
+""" Simple check for existence of files (non-empty)
+
+allow_empty: iterable of filename suffixes that are allowed to be empty
+(e.g. ".clnsig" is legitimately empty when the database was built without
+--clinvar, since no clinical-significance annotations are written into it).
+"""
+def check_files(fnames, allow_empty=None):
+    if allow_empty is None:
+        allow_empty = []
     for fname in fnames:
         if not os.path.exists(fname):
             print("No %s file found" % fname,
+                  file=sys.stderr)
+            return False
+        if os.path.getsize(fname) == 0 and \
+           not any(fname.endswith(sfx) for sfx in allow_empty):
+            print("No %s file found (or empty)" % fname,
                   file=sys.stderr)
             return False
     return True
@@ -100,8 +112,10 @@ def check_base(base_fname, aligner, ix_dir = "."):
         assert aligner == "bowtie2"
         genotype_fnames = ["%s.%d.bt2" % (full_path, i+1) for i in range(4)]
         genotype_fnames += ["%s.rev.%d.bt2" % (full_path, i+1) for i in range(2)]
-        
-    if not check_files(genotype_fnames):
+
+    # .clnsig is allowed to be empty (it is only filled when the database
+    # is built with --clinvar); all other files must exist and be non-empty.
+    if not check_files(genotype_fnames, allow_empty=[".clnsig"]):
         print("Error: %s related files are missing in %s!" % (base_fname, ix_dir), 
               file=sys.stderr)
         return False
@@ -344,7 +358,7 @@ def read_variants(fname, genes = False):
     while variants:
         varset = variants.pop(0)
         var_id, var_type, name, pos, var = varset.split("\t")
-        if var_type == 'Deletion':
+        if var_type == 'deletion':
             var = int(var)
         pos  = int(pos)
         gene = name.split("*")[0] if genes else name
@@ -436,50 +450,46 @@ def read_MSF_file(fname,
             continue
 
         if line.startswith("Name"):
-            try:
-                name = line.split('\t')[0]
-                name = name.split()[1]
-            except ValueError:
-                continue
+            # Note: the "Name:" header lines of an MSF alignment are
+            # skipped on purpose.  Some MSF files (e.g. those generated
+            # from newer IPD-IMGT/HLA releases such as 3.65.0) use a
+            # " Name: <allele>" format whose allele names can differ in
+            # case and punctuation from the names used in the alignment
+            # body rows.  Parsing them as sequence rows corrupts the
+            # sequences, so the names are instead discovered from the
+            # body rows below.
+            continue
 
-            if name in names:
-                print("Warning: %s is found more than once in Names" \
-                        % (name), 
-                        file=sys.stderr)
-                continue
+        if len(seqs) == 0:
+            seqs = [left_ext_seq for i in range(len(names))]
+        try:
+            cols  = line.split()
+            name  = cols[0]
+            fives = cols[1:]
+            assert len(fives) > 0
+        except ValueError:
+            continue
 
+        if name not in names:
             names[name] = len(names)
-        else:
-            if len(seqs) == 0:
-                seqs = [left_ext_seq for i in range(len(names))]
-            try:
-                cols  = line.split()
-                name  = cols[0]
-                fives = cols[1:]
-                assert len(fives) > 0
-            except ValueError:
-                continue
 
-            if name not in names:
-                names[name] = len(names)
+        id = names[name]
+        if id >= len(seqs):
+            assert id == len(seqs)
+            seqs.append(left_ext_seq)
 
-            id = names[name]
-            if id >= len(seqs):
-                assert id == len(seqs)
-                seqs.append(left_ext_seq)
-                
-            seqs[id] += ''.join(fives)
+        seqs[id] += ''.join(fives)
 
-            # Add sub-names of the allele
-            sub_name = ""
-            for group in name.split(':')[:-1]:
-                if sub_name != "":
-                    sub_name += ":"
-                sub_name += group
-                if sub_name not in full_alleles:
-                    full_alleles[sub_name] = [name]
-                else:
-                    full_alleles[sub_name].append(name)
+        # Add sub-names of the allele
+        sub_name = ""
+        for group in name.split(':')[:-1]:
+            if sub_name != "":
+                sub_name += ":"
+            sub_name += group
+            if sub_name not in full_alleles:
+                full_alleles[sub_name] = [name]
+            else:
+                full_alleles[sub_name].append(name)
 
     if len(right_ext_seq) > 0:
         for i_ in range(len(seqs)):

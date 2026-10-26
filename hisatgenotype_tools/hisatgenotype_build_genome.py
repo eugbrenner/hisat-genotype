@@ -54,7 +54,7 @@ def build_genotype_genome(base_fname,
                           graph_index,
                           verbose):    
     # Download HISAT2 index
-    typing_common.download_genome_and_index()
+    typing_common.download_genome_and_index(".")
 
     # Load genomic sequences
     chr_dic, chr_names, chr_full_names = typing_common.read_genome("genome.fa")
@@ -144,15 +144,23 @@ def build_genotype_genome(base_fname,
     # Genes to be genotyped
     genotype_genes = {}
 
-    # Read genes or genomics regions
+    # Pre-load all database data into memory BEFORE opening output files.
+    # The output files (hla.locus, hla.snp, hla.haplotype, hla.link, etc.)
+    # share the same names as the extract-vars input files for the HLA
+    # database.  If we open them for writing before reading the input
+    # data, the input data is lost (truncated to zero bytes).
+    db_data = {}
     for database_name in database_list:
-        # Extract HLA variants, backbone sequence, and other sequeces
+        db_data[database_name] = {}
+        # Extract HLA variants, backbone sequence, and other sequences
         typing_common.extract_database_if_not_exists(database_name,
                                                      [],            # locus_list
+                                                     ".",           # ix_dir
                                                      inter_gap,
                                                      intra_gap,
                                                      True,          # partial?
                                                      verbose)
+        # Read locus information
         locus_fname = "%s.locus" % database_name
         assert os.path.exists(locus_fname)
         for line in open(locus_fname):
@@ -178,6 +186,21 @@ def build_genotype_genome(base_fname,
                                         database_name, 
                                         exon_str, 
                                         strand])
+        # Read allele sequences, variants, haplotypes, and links
+        db_data[database_name]['allele_seqs'] = \
+            typing_common.read_allele_seq("%s_backbone.fa" % database_name)
+        db_data[database_name]['allele_vars'] = \
+            typing_common.read_variants("%s.snp" % database_name)
+        db_data[database_name]['allele_index_vars'] = \
+            typing_common.read_variants("%s.index.snp" % database_name)
+        db_data[database_name]['allele_haplotypes'] = \
+            typing_common.read_haplotypes("%s.haplotype" % database_name)
+        db_data[database_name]['links'] = \
+            typing_common.read_links("%s.link" % database_name, True)
+        db_data[database_name]['allele_names'] = \
+            [line.strip() for line in open("%s.allele" % database_name)]
+        db_data[database_name]['partial_names'] = \
+            [line.strip() for line in open("%s.partial" % database_name)]
 
     # Write genotype genome
     var_num       = 0
@@ -297,12 +320,13 @@ def build_genotype_genome(base_fname,
                            chr_genotype_hti, 
                            haplotype_num)
 
-            # Read gene family sequences and information
-            allele_seqs       = typing_common.read_allele_seq("%s_backbone.fa" % family)
-            allele_vars       = typing_common.read_variants("%s.snp" % family)
-            allele_index_vars = typing_common.read_variants("%s.index.snp" % family)
-            allele_haplotypes = typing_common.read_haplotypes("%s.haplotype" % family)
-            links             = typing_common.read_links("%s.link" % family, True)
+            # Use pre-loaded gene family sequences and information
+            # (loaded before output files were opened to avoid truncation)
+            allele_seqs       = db_data[family]['allele_seqs']
+            allele_vars       = db_data[family]['allele_vars']
+            allele_index_vars = db_data[family]['allele_index_vars']
+            allele_haplotypes = db_data[family]['allele_haplotypes']
+            links             = db_data[family]['links']
 
             if name not in allele_seqs:
                 continue
@@ -458,8 +482,7 @@ def build_genotype_genome(base_fname,
     allele_out_file = open("%s.allele" % base_fname, 'w')
     if graph_index:
         for database in database_list:
-            for line in open("%s.allele" % database):
-                allele_name = line.strip()
+            for allele_name in db_data[database]['allele_names']:
                 print("%s\t%s" % (database.upper(), allele_name), 
                       file=allele_out_file)
     allele_out_file.close()
@@ -467,8 +490,7 @@ def build_genotype_genome(base_fname,
     partial_out_file = open("%s.partial" % base_fname, 'w')
     if graph_index:
         for database in database_list:
-            for line in open("%s.partial" % database):
-                allele_name = line.strip()
+            for allele_name in db_data[database]['partial_names']:
                 print("%s\t%s" % (database.upper(), allele_name), 
                       file=partial_out_file)
     partial_out_file.close()
@@ -498,10 +520,21 @@ def build_genotype_genome(base_fname,
     if verbose:
         print("\tRunning:", ' '.join(build_cmd), 
               file=sys.stderr)
-        
-    subprocess.call(build_cmd, 
-                    stdout=open("/dev/null", 'w'), 
-                    stderr=open("/dev/null", 'w'))
+
+    # Do NOT swallow the aligner's output: a silent failure here (e.g.
+    # running out of disk space while writing .ebwt files) used to make the
+    # whole build look successful while leaving corrupt/empty index files.
+    proc = subprocess.Popen(build_cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            universal_newlines=True)
+    out, _ = proc.communicate()
+    if proc.returncode != 0:
+        print("Error: %s failed (exit code %d):" % (build_cmd[0],
+                                                    proc.returncode),
+              file=sys.stderr)
+        print(out, file=sys.stderr)
+        sys.exit(1)
 
     if aligner == "hisat2":
         index_fnames = ["%s.%d.ht2" % (base_fname, i+1) for i in range(8)]

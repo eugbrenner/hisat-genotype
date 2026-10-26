@@ -679,14 +679,37 @@ def extract_vars(base_fname,
                                           ref_partial_seq_map[next_exon_len]])
                 exon_len += (right - left + 1)
                 # Make sure two MSF files (e.g. A_gen.msf and A_nuc.msf) 
-                # share the same MSF lengths in the exonic sequences
+                # share the same MSF lengths in the exonic sequences.
+                #
+                # In newer IPD-IMGT/HLA releases (e.g. >= 3.65.0) the exonic
+                # regions of the partial (nuc) MSF alignment are NOT a
+                # 1:1 subsequence of the genomic (gen) MSF alignment: the
+                # partial alignment contains extra indels (and possibly
+                # different gap structures) in the exonic regions.
+                # Since partial alleles are spliced onto the consensus
+                # backbone using the REFERENCE (genomic) exon boundaries
+                # (see the partial-alignment loop below), we cannot trust
+                # the exon boundaries derived from the partial alignment.
+                # In that case, keep only the reference partial sequences
+                # that are consistent (same exonic lengths) with the
+                # genomic alignment, and drop the inconsistent ones
+                # instead of aborting the whole database build.
                 ref_exon_len         = ref_exons[-1][1] \
                                         - ref_exons[-1][0] \
                                         + 1
                 ref_partial_exon_len = ref_partial_exons[-1][1] \
                                         - ref_partial_exons[-1][0] \
                                         + 1
-                assert ref_exon_len == ref_partial_exon_len
+                if ref_exon_len != ref_partial_exon_len:
+                    print("Warning: partial MSF (%s) has different exonic " \
+                            "lengths than the genomic MSF (exon %d: %d vs %d). " \
+                            "Partial sequences of %s will be restricted to " \
+                            "the reference alignment only." \
+                            % (partial_MSA_fname, len(exon), 
+                               ref_exon_len, ref_partial_exon_len, gene),
+                          file=sys.stderr)
+                    complete = False
+                    break
 
             if complete:
                 partial_seq_len = find_seq_len(partial_seqs)
@@ -697,6 +720,7 @@ def extract_vars(base_fname,
                                                                  False) # Remove
                                                                         # empty 
                                                                         # sequences?
+
                 for name in partial_names:
                     if name in names:
                         continue
@@ -722,6 +746,57 @@ def extract_vars(base_fname,
                     new_seq    += backbone_seq[right:]
                     names[name] = len(seqs)
                     seqs.append(new_seq)
+
+                backbone_seq, backbone_freq = create_consensus_seq(seqs,
+                                                                   seq_len,
+                                                                   min_var_freq,
+                                                                   remove_empty=True)
+                seq_len = find_seq_len(seqs)
+
+            elif len(ref_partial_exons) < len(ref_exons):
+                # Fallback for the "incomplete" partial sequences case.
+                # When the partial sequences of the reference allele do not
+                # cover all exons of the genomic alignment, splice the
+                # exons that ARE available and fill the remaining (missing)
+                # exons from the genomic reference sequence.  This keeps the
+                # reference allele consistent with the backbone remapping
+                # step below (which requires the reference partial sequence
+                # to be present in `partial_names`).
+                for name in [ref_gene]:
+                    if name in names:
+                        continue
+                    seq     = partial_seqs[partial_names[name]]
+                    new_seq = ""
+                    right   = 0
+                    for e in range(len(exons)):
+                        ref_exon = ref_exons[e]
+                        if e < len(ref_partial_exons):
+                            ref_partial_exon = ref_partial_exons[e]
+                            exon_seq = seq[ref_partial_exon[0]\
+                                               :ref_partial_exon[1] + 1]
+                            nt_exon_seq = exon_seq\
+                                                .replace('.', '')\
+                                                .replace('~', '')
+                            if len(nt_exon_seq) == 0:
+                                exon_seq = ref_seq\
+                                        [ref_exon[0]:ref_exon[1] + 1]\
+                                        .replace('.', '')
+                        else:
+                            # Exon not covered by the partial alignment:
+                            # take it from the genomic reference sequence
+                            exon_seq = ref_seq[ref_exon[0]\
+                                                :ref_exon[1] + 1]\
+                                                .replace('.', '')
+                        new_seq += backbone_seq[right:ref_exon[0]]
+                        new_seq += exon_seq
+                        right    = ref_exon[1] + 1
+                    new_seq    += backbone_seq[right:]
+                    names[name] = len(seqs)
+                    seqs.append(new_seq)
+                    print("Warning: %s (%s) partially spliced with missing " \
+                            "exon(s) filled from the genomic reference " \
+                            "sequence" % (gene, name),
+                          file=sys.stderr)
 
                 backbone_seq, backbone_freq = create_consensus_seq(seqs,
                                                                    seq_len,
@@ -767,7 +842,13 @@ def extract_vars(base_fname,
         # Solution is to omit the offending gene from the 
         # database to prevent premature termination of database build.
         if min_var_freq <= 0.0:
-            omits = ['.', 'E', '~']
+            # '.' (deletion) and '~' (missing) in the backbone are
+            # always a problem.  'E' (a fully-uncovered position that
+            # was not removed because remove_empty=False) is tolerated
+            # in newer IPD-IMGT/HLA releases where a small number of
+            # positions in the genomic alignment are not covered by
+            # any allele; such positions are simply not variable.
+            omits = ['.', '~']
             breakout = False
 
             for omit in omits:
@@ -864,7 +945,15 @@ def extract_vars(base_fname,
                         freq    = 100.0
                         for i in range(ins_len):
                             nt = data[i]
-                            assert nt in backbone_freq[backbone_pos + i]
+                            # In newer IPD-IMGT/HLA releases (e.g. >= 3.65.0)
+                            # some rare alleles contain insertions at
+                            # positions where the (genomic) backbone has no
+                            # variation at all (an empty backbone position).
+                            # Such an insertion cannot be represented in the
+                            # graph, so skip this variant instead of
+                            # crashing the whole database build.
+                            if nt not in backbone_freq[backbone_pos + i]:
+                                return
                             freq2 = backbone_freq[backbone_pos + i][nt]
                             if freq2 < freq:
                                 freq = freq2
@@ -1020,19 +1109,30 @@ def extract_vars(base_fname,
                 del_count.append(del_count[-1] + add)
         
         if base_fname in spliced_gene:
-            exon_str = ""
-            for exon_i in range(len(gene_exons[gene])):
-                exon_left, exon_right = gene_exons[gene][exon_i]
-                exon_left   = ref_seq_map[exon_left]
-                exon_right  = ref_seq_map[exon_right]
-                exon_left  -= del_count[exon_left]
-                exon_right -= del_count[exon_right]
-                if exon_str != "":
-                    exon_str += ','
-                primary = gene_exon_counts[gene][exon_i] \
-                            == max(gene_exon_counts[gene].values())
-                exon_str += ("%d-%d%s" 
-                                % (exon_left, exon_right, 'p' if primary else ''))
+            # Some genes in newer IPD-IMGT/HLA releases (e.g. P in 3.65.0)
+            # have no exonic information in hla.dat and/or no *_nuc.msf
+            # partial alignment.  In that case fall back to a single-exon
+            # representation instead of crashing on missing exon counts.
+            if gene in gene_exons and gene in gene_exon_counts:
+                exon_str = ""
+                for exon_i in range(len(gene_exons[gene])):
+                    exon_left, exon_right = gene_exons[gene][exon_i]
+                    exon_left   = ref_seq_map[exon_left]
+                    exon_right  = ref_seq_map[exon_right]
+                    exon_left  -= del_count[exon_left]
+                    exon_right -= del_count[exon_right]
+                    if exon_str != "":
+                        exon_str += ','
+                    primary = gene_exon_counts[gene].get(exon_i, 0) \
+                                == max(gene_exon_counts[gene].values())
+                    exon_str += ("%d-%d%s" 
+                                    % (exon_left, exon_right, 'p' if primary else ''))
+            else:
+                if verbose:
+                    print("Warning: no exonic information for %s; "
+                          "using single-exon representation" % gene,
+                          file=sys.stderr)
+                exon_str = "%d-%d" % (left, right - 1)
 
             # Sanity check for exonic sequence
             if SANITY_CHECK \

@@ -796,7 +796,7 @@ def typing(simulation,
                 right_positive_hts = set()
                 
                 # Cigar regular expression
-                cigar_re = re.compile('\d+\w')
+                cigar_re = re.compile(r'\d+\w')
                 for line in alignview_proc.stdout:
                     if not complete["Align Return"]: # Confirm alingment return
                         complete["Align Return"] = True

@@ -359,7 +359,7 @@ def extract_vars(base_fname,
     if locus_list == []:
         locus_list = gene_names
 
-    cigar_re = re.compile('\d+\w')
+    cigar_re = re.compile(r'\d+\w')
     remove_locus_list = []
     for gene in locus_list:
         aligner_cmd = ["hisat2"]

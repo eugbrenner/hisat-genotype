@@ -1082,7 +1082,7 @@ def get_mpileup(alignview_cmd,
                             stderr = open("/dev/null", 'w'))
 
     prev_pos = -1
-    cigar_re = re.compile('\d+\w')
+    cigar_re = re.compile(r'\d+\w')
     for line in proc.stdout:
         line = line.strip()
         cols = line.split()
@@ -1210,7 +1210,7 @@ def get_pair_interdist(alignview_cmd,
 
     dist_list    = []
     prev_read_id = None
-    cigar_re     = re.compile('\d+\w')
+    cigar_re     = re.compile(r'\d+\w')
     reads        = []
     for line in alignview_proc.stdout:
         line = line.strip()

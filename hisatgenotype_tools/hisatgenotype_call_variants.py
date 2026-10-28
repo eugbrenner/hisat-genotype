@@ -16,7 +16,7 @@ def get_positions (alignemnt_fname):
                             stderr=open("/dev/null", "w"))
 
     snp_ranges = {}
-    cigar_re = re.compile('\d+\w')
+    cigar_re = re.compile(r'\d+\w')
     for line in proc.stdout:
         line = line.strip()
         cols = line.split()
@@ -74,7 +74,7 @@ def get_snps(alignment_fname,
                             stderr=open("/dev/null", "w"))
 
     snp_pos = {}
-    cigar_re = re.compile('\d+\w')
+    cigar_re = re.compile(r'\d+\w')
     for line in proc.stdout:
         line = line.strip()
         cols = line.split()
@@ -129,7 +129,7 @@ def get_snps(alignment_fname,
         weight_cstr.append(pval_read/nh)
 
         # Parse md and zs field
-        md = re.split('(\d+)', md)
+        md = re.split(r'(\d+)', md)
         md_list, zs_list, ptr = [], [], 0 
         for field in md:
             if field.isdigit():

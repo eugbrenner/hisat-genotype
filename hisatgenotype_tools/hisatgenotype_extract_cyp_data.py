@@ -76,7 +76,7 @@ def download_CYP(verbose):
 
     # Refer to Python's regular expression at 
     # https://docs.python.org/2/library/re.html
-    cyp_re   = re.compile('http://www.cypalleles.ki.se/cyp\w+.htm')
+    cyp_re   = re.compile(r'http://www.cypalleles.ki.se/cyp\w+.htm')
     output   = get_html(base_url)
     cyp_urls = cyp_re.findall(output)
     # Original list had duplicate urls, removes duplicates
@@ -92,7 +92,7 @@ def download_CYP(verbose):
             cyp_gene_name = cyp_gene_name + "a2" 
 
         # Changed to match all instances of "cyp"
-        if not re.compile("cyp[\d\w]+", re.IGNORECASE).search(cyp_gene_name):
+        if not re.compile(r"cyp[\d\w]+", re.IGNORECASE).search(cyp_gene_name):
             continue
 
         # Open file to write on
@@ -132,8 +132,8 @@ def download_CYP(verbose):
             for ind in range(len(tabRow)):
                 tabRow[ind] = tabRow[ind].replace("\r\n","")
 
-            allele_name_re = re.compile(cyp_gene_name.upper() + '\*[\w\d]+')
-            varInfo_re     = re.compile('-?\d+[ACGT]\&gt;[ACGT]|-?\d+_?-?\d+?del[ACGT]+|-?\d+_?-?\d+?ins[ACGT]+|None')
+            allele_name_re = re.compile(cyp_gene_name.upper() + r'\*[\w\d]+')
+            varInfo_re     = re.compile(r'-?\d+[ACGT]\&gt;[ACGT]|-?\d+_?-?\d+?del[ACGT]+|-?\d+_?-?\d+?ins[ACGT]+|None')
 
             alleleName = allele_name_re.findall(tabRow[0])
             if len(alleleName) > 0:
@@ -775,7 +775,7 @@ def msfToVarList(ref_seq, al_seq):
     inv_map = create_inv_map(ref_seq)
     
     # list of duples of indicies of insertions in ref_seq
-    ins_re         = re.compile('[ACGT]\.+')
+    ins_re         = re.compile(r'[ACGT]\.+')
     ins_subStrPos  = [(m.start(0), m.end(0)) for m in re.finditer(ins_re, ref_seq)] 
     ins_pos_length = [(tup[0], tup[1] - tup[0] - 1) for tup in ins_subStrPos]
 
@@ -1097,7 +1097,7 @@ def extract_var_from_blast(cyp_blast_fname):
     all_lines   = [line.strip() for line in blastn_file if not (len(line.strip()) == 0 or line.strip().startswith('|'))]
     blastn_file.close()
 
-    id_match = [m.group(0) for l in all_lines[0:25] for m in [re.compile('.*(Identities.*).*').search(l)] if m][0]
+    id_match = [m.group(0) for l in all_lines[0:25] for m in [re.compile(r'.*(Identities.*).*').search(l)] if m][0]
     id_match = id_match.split('%')[0].split(' (')[0].split('= ')[1].split('/')
     id_match = [int(i) for i in id_match]
 

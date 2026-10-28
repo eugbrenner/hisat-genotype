@@ -151,7 +151,7 @@ def get_seqbyRef(access,
                   gene_found and not cds_found:
                 if line.startswith('CDS'):
                     cds_found = True
-                raw_exons = re.findall('\(([^)]+)', line)
+                raw_exons = re.findall(r'\(([^)]+)', line)
                 if raw_exons and raw_exons[0][-1] == ',':
                     mRNAline += 1
                 if mRNAline == 1:
@@ -745,7 +745,7 @@ def extract_RBC(out_dir,
         sys.stdout.write("====")
         sys.stdout.flush()
 
-    cigar_re = re.compile('\d+\w')
+    cigar_re = re.compile(r'\d+\w')
 
     for gene, ref in refGeneSeq.items():
         if gene in ['CR1', 'C4B', 'C4A', 'RHCE', 'RHD', 'GCNT2']:
